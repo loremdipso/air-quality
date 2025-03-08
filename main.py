@@ -1,9 +1,23 @@
 import geopandas
 import csv
+import statistics
+
+# Performance: build a spatial index instead???
 
 # Lets you load common datasets
 # from geodatasets import get_path
 # path_to_data = get_path("nybb")
+# print(shapes.total_bounds)
+
+# print(gdf.total_bounds)
+# print(gdf.cx[slice(50, -124), slice(47, -116)])
+
+# print(gdf)
+# print(gdf.columns)
+# for index, row in gdf.iterrows():
+    # print(row["GEOID20"]) # zip code
+# def main():
+#     print("Hello from air-quality!")
 
 def load_shapes():
     bbox = (
@@ -16,38 +30,34 @@ def load_shapes():
 
     # gdf = geopandas.read_file("./data/tl_2020_us_zcta520/tl_2020_us_zcta520.shp", rows=slice(0,10), bbox=bbox)
     gdf = geopandas.read_file("./data/tl_2020_us_zcta520/tl_2020_us_zcta520.shp", bbox=bbox)
-
-    # print(gdf.total_bounds)
-    # print(gdf.cx[slice(50, -124), slice(47, -116)])
-
-    # print(gdf)
-    # print(gdf.columns)
-    # for index, row in gdf.iterrows():
-        # print(row["GEOID20"]) # zip code
-    # def main():
-    #     print("Hello from air-quality!")
     return gdf
 
 
-def load_points():
+def doit():
+    rv = {}
+    shapes = load_shapes()
     with open('./data/8hour_44201_2024.csv', newline='') as csvfile:
-        csvreader = csv.reader(csvfile, delimiter=',', quotechar='|')
-        # Skip the first one
+        csvreader = csv.reader(csvfile, delimiter=',', quotechar='"')
+        # Skip the title row one
         next(csvreader)
-        return [next(csvreader) for _ in range(10)]
+        for point in csvreader:
+            lat = float(point[5])
+            lon = float(point[6])
 
-points = load_points()
-point = points[0]
+            # this is just made up
+            air_quality = float(point[19])
 
-lat = float(point[5])
-lon = float(point[6])
-# print(lon, lat)
+            # Maybe use https://geopandas.org/en/stable/docs/reference/api/geopandas.sindex.SpatialIndex.intersection.html#geopandas.sindex.SpatialIndex.intersection
+            # instead of this thing
+            lilbit = 0.00000000001
+            result = shapes.cx[lon:lon+lilbit, lat:lat+lilbit]
+            for zip in result["GEOID20"]:
+                rv.setdefault(zip, []).append(air_quality)
+    return rv
 
-# this is just made up
-air_quality = float(point[19])
+data = doit()
+for key, values in data.items():
+    avg = statistics.mean(values)
+    print(key, avg)
 
-# We have the points, we have the shapes. We just want to see which points exist
-# in each shape. So... n^2, just loop through everything?
-shapes = load_shapes()
-print(shapes.total_bounds)
-print(shapes.cx[ -119.243743:-119.343743, 46.204582:46.304582 ])
+print("done")
