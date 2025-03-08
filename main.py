@@ -1,3 +1,4 @@
+import sys
 import geopandas
 import csv
 import statistics
@@ -76,8 +77,13 @@ def get_weighted_mapping():
                   Polygon([(min_x,min_y),(min_x,max_y),(max_x,max_y),(max_x,min_y)]),
               ]}, geometry='geometry')
             for index, row in zips_gdf.iterrows():
+                # Make a new datafrom just from this row. Which is probably
+                # not the right way to do this but I don't really know geopandas
                 zip_gdf = geopandas.GeoDataFrame([row])
+
+                # Find the intersection dataframe
                 gdf_joined = geopandas.overlay(zip_gdf, aq_gdf, how='intersection')
+
                 intersected_area = gdf_joined.area[0]
                 zipcode_area = zip_gdf.area[0]
                 weight = intersected_area / zipcode_area
@@ -101,5 +107,14 @@ def slow_and_precise():
         avg = weighted_sum / total_weight
         print(f"{key},{avg}")
 
-fast_and_imprecise()
-# slow_and_precise()
+def main():
+    if len(sys.argv) == 2:
+        if sys.argv[1] == "--slow":
+            slow_and_precise()
+            return
+        elif sys.argv[1] == "--fast":
+            fast_and_imprecise()
+            return
+    print("Usage: ./main.py [--slow|--fast]")
+
+main()
