@@ -2,62 +2,50 @@ import geopandas
 import csv
 import statistics
 
-# Performance: build a spatial index instead???
-
-# Lets you load common datasets
-# from geodatasets import get_path
-# path_to_data = get_path("nybb")
-# print(shapes.total_bounds)
-
-# print(gdf.total_bounds)
-# print(gdf.cx[slice(50, -124), slice(47, -116)])
-
-# print(gdf)
-# print(gdf.columns)
-# for index, row in gdf.iterrows():
-    # print(row["GEOID20"]) # zip code
-# def main():
-#     print("Hello from air-quality!")
 
 def load_shapes():
     bbox = (
-        # Rough approximation of washington
+        # Rough square around washington
         -130,
         50,
         -115, 
         45,
     )
 
-    # gdf = geopandas.read_file("./data/tl_2020_us_zcta520/tl_2020_us_zcta520.shp", rows=slice(0,10), bbox=bbox)
+    # Performance: you might want to build a spatial index:
+    # https://geopandas.org/en/stable/docs/reference/sindex.html
     gdf = geopandas.read_file("./data/tl_2020_us_zcta520/tl_2020_us_zcta520.shp", bbox=bbox)
     return gdf
 
 
-def doit():
-    rv = {}
+def get_mapping():
+    # key is zip code, value is array of air quality measurements
+    mapping = {}
     shapes = load_shapes()
-    with open('./data/8hour_44201_2024.csv', newline='') as csvfile:
+    # This assumes your dataset is just a csv and each row is a bounding box
+    # and then the air quality, i.e.
+    # min_x, max_x, min_y, max_y, air quality
+    with open('./data/boxes.csv', newline='') as csvfile:
         csvreader = csv.reader(csvfile, delimiter=',', quotechar='"')
-        # Skip the title row one
-        next(csvreader)
         for point in csvreader:
-            lat = float(point[5])
-            lon = float(point[6])
+            min_x = float(point[0])
+            max_x = float(point[1])
+            min_y = float(point[2])
+            max_y = float(point[3])
 
-            # this is just made up
-            air_quality = float(point[19])
+            # I'm not sure what this number actually is
+            air_quality = float(point[4])
 
-            # Maybe use https://geopandas.org/en/stable/docs/reference/api/geopandas.sindex.SpatialIndex.intersection.html#geopandas.sindex.SpatialIndex.intersection
-            # instead of this thing
-            lilbit = 0.00000000001
-            result = shapes.cx[lon:lon+lilbit, lat:lat+lilbit]
+            result = shapes.cx[min_x:max_x, min_y:max_y]
+
+            # This finds all overlapping ZCTAs. If you want more precision you
+            # could check a bunch of points and see how many overlap.
             for zip in result["GEOID20"]:
-                rv.setdefault(zip, []).append(air_quality)
-    return rv
+                mapping.setdefault(zip, []).append(air_quality)
+    return mapping
 
-data = doit()
-for key, values in data.items():
+
+for key, values in get_mapping().items():
+    # Basic, unweighted mean
     avg = statistics.mean(values)
     print(key, avg)
-
-print("done")
