@@ -120,7 +120,7 @@ def get_weighted_mapping():
     # This assumes your dataset is just a csv and each row is a bounding box
     # and then the air quality, i.e.
     # min_x, max_x, min_y, max_y, air quality
-    print("Running through out air quality boxes...")
+    print("Running through our air quality boxes...")
     with open('./data/air_quality_boxes.csv', newline='') as csvfile:
         csvreader = csv.reader(csvfile, delimiter=',', quotechar='"')
         count = 0
