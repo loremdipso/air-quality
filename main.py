@@ -2,16 +2,14 @@ import sys
 import geopandas
 import csv
 import statistics
+import time
 from shapely.geometry import Polygon
 from pyproj import Transformer
 
 
 def main():
     if len(sys.argv) == 2:
-        if sys.argv[1] == "--convert":
-            convert()
-            return
-        elif sys.argv[1] == "--slow":
+        if sys.argv[1] == "--slow":
             num_rows = slow_and_precise()
             print(f"Done writing {num_rows} rows to output.csv")
             return
@@ -24,6 +22,12 @@ def main():
 
 def load_census_blocks():
     print("Loading census blocks...")
+    try:
+        # Try to load from cache
+        gdf = geopandas.read_file("./washington.gpkg")
+        print("Loaded from cache...")
+        return gdf
+    except: pass
 
     # I refuse to look this up because EPSG:4326 is dumb and makes no sense
     # So let's just work in lat/long and convert at runtime
@@ -51,6 +55,11 @@ def load_census_blocks():
     # This one is long/lat with 2M accuracy, which should be more than fine.
     print("Converting to a reasonable format")
     gdf.to_crs(epsg=4326, inplace=True)
+
+    # Cache
+    print("Writing to cache...")
+    # gdf.to_file("washington.shp")
+    gdf.to_file("washington.gpkg", driver="GPKG")
     return gdf
 
 
@@ -116,6 +125,13 @@ def get_unweighted_mapping():
 def get_weighted_mapping():
     # key is block id, value is array of tuples of (value, weight)
     mapping = {}
+    times = {
+        "cx": 0,
+        "area": 0,
+        "overlay": 0,
+        "aq_gdf": 0,
+        "bgdf": 0,
+    }
     census_blocks = load_census_blocks()
     # This assumes your dataset is just a csv and each row is a bounding box
     # and then the air quality, i.e.
@@ -125,6 +141,7 @@ def get_weighted_mapping():
         csvreader = csv.reader(csvfile, delimiter=',', quotechar='"')
         count = 0
         for air_quality_rect in csvreader:
+            # print(times)
             count += 1
             if count % 100 == 0: print(f"Finished {count} rows")
             min_x = float(air_quality_rect[0])
@@ -135,23 +152,35 @@ def get_weighted_mapping():
             # I'm not sure what this number actually is
             air_quality = float(air_quality_rect[4])
 
+            t = time.perf_counter()
             blocks_gdf = census_blocks.cx[min_x:max_x, min_y:max_y]
+            times["cx"] += (time.perf_counter() - t)
+
+            t = time.perf_counter()
             aq_gdf = geopandas.GeoDataFrame(data={
               'geometry':[
                   Polygon([(min_x,min_y),(min_x,max_y),(max_x,max_y),(max_x,min_y)]),
               ]}, geometry='geometry')
+            times["aq_gdf"] += (time.perf_counter() - t)
+
             for index, row in blocks_gdf.iterrows():
                 # Make a new datafrom just from this row. Which is probably
                 # not the right way to do this but I don't really know geopandas
+                t = time.perf_counter()
                 block_gdf = geopandas.GeoDataFrame([row])
+                times["bgdf"] += (time.perf_counter() - t)
 
                 # Find the intersection dataframe
+                t = time.perf_counter()
                 gdf_joined = geopandas.overlay(block_gdf, aq_gdf, how='intersection')
+                times["overlay"] += (time.perf_counter() - t)
 
+                t = time.perf_counter()
                 intersected_area = list(gdf_joined.area)[0]
                 block_area = list(block_gdf.area)[0]
                 weight = intersected_area / block_area
                 block = list(block_gdf["BLOCK"])[0]
+                times["area"] += (time.perf_counter() - t)
                 mapping.setdefault(block, []).append((air_quality, weight))
     return mapping
 
