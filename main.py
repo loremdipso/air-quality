@@ -3,6 +3,7 @@ import geopandas
 import csv
 import statistics
 from shapely.geometry import Polygon
+from pyproj import Transformer
 
 
 def main():
@@ -23,13 +24,20 @@ def main():
 
 def load_census_blocks():
     print("Loading census blocks...")
+
+    # I refuse to look this up because EPSG:4326 is dumb and makes no sense
+    # So let's just work in lat/long and convert at runtime
+    trans = Transformer.from_crs(
+        "EPSG:4326", # lat/long
+        "EPSG:3857", # world
+        always_xy=True,
+    )
+
     bbox = (
         # Rough square around washington to limit our search space
         # TODO: button this up
-        -130,
-        50,
-        -115, 
-        45,
+        *trans.transform(-130, 50),
+        *trans.transform(-115, 45)
     )
 
     # Performance: you might want to build a spatial index:
@@ -37,9 +45,7 @@ def load_census_blocks():
 
     # I downloaded the GeoPackage file from https://hub.arcgis.com/datasets/d795eaa6ee7a40bdb2efeb2d001bf823_0/about
     # It says it was published in 2021 and updated in 2025, so I'm hopeful that this is pretty up to date.
-    # gdf = geopandas.read_file("./data/census_blocks/census_blocks.gpkg", bbox=bbox)
-    # gdf = geopandas.read_file("./data/census_blocks/census_blocks.gpkg")
-    gdf = geopandas.read_file("./data/census_blocks/census_blocks.gpkg")
+    gdf = geopandas.read_file("./data/census_blocks/census_blocks.gpkg", bbox=bbox)
 
     # Change the coordinate reference system to something more standard.
     # This one is long/lat with 2M accuracy, which should be more than fine.
@@ -77,13 +83,13 @@ def slow_and_precise():
 
 
 def get_unweighted_mapping():
-    # key is zip code, value is array of air quality measurements
+    # key is block id, value is array of air quality measurements
     mapping = {}
     census_blocks = load_census_blocks()
     # This assumes your dataset is just a csv and each row is a bounding box
     # and then the air quality, i.e.
     # min_x, max_x, min_y, max_y, air quality
-    print("Running through out air quality boxes...")
+    print("Running through the air quality boxes...")
     with open('./data/air_quality_boxes.csv', newline='') as csvfile:
         csvreader = csv.reader(csvfile, delimiter=',', quotechar='"')
         count = 0
@@ -100,15 +106,15 @@ def get_unweighted_mapping():
 
             # This finds all overlapping ZCTAs. If you want more precision you
             # could check a bunch of points and see how many overlap.
-            result = census_blocks.cx[min_x:max_x, min_y:max_y]
-            for block_id in result["BLOCK"]:
+            results = census_blocks.cx[min_x:max_x, min_y:max_y]
+            for block_id in results["BLOCK"]:
                 mapping.setdefault(block_id, []).append(air_quality)
     return mapping
 
 
 # NOTE: I haven't actually verified if this is correct.
 def get_weighted_mapping():
-    # key is zip code, value is array of tuples of (value, weight)
+    # key is block id, value is array of tuples of (value, weight)
     mapping = {}
     census_blocks = load_census_blocks()
     # This assumes your dataset is just a csv and each row is a bounding box
@@ -129,24 +135,24 @@ def get_weighted_mapping():
             # I'm not sure what this number actually is
             air_quality = float(air_quality_rect[4])
 
-            zips_gdf = census_blocks.cx[min_x:max_x, min_y:max_y]
+            blocks_gdf = census_blocks.cx[min_x:max_x, min_y:max_y]
             aq_gdf = geopandas.GeoDataFrame(data={
               'geometry':[
                   Polygon([(min_x,min_y),(min_x,max_y),(max_x,max_y),(max_x,min_y)]),
               ]}, geometry='geometry')
-            for index, row in zips_gdf.iterrows():
+            for index, row in blocks_gdf.iterrows():
                 # Make a new datafrom just from this row. Which is probably
                 # not the right way to do this but I don't really know geopandas
-                zip_gdf = geopandas.GeoDataFrame([row])
+                block_gdf = geopandas.GeoDataFrame([row])
 
                 # Find the intersection dataframe
-                gdf_joined = geopandas.overlay(zip_gdf, aq_gdf, how='intersection')
+                gdf_joined = geopandas.overlay(block_gdf, aq_gdf, how='intersection')
 
-                intersected_area = gdf_joined.area[0]
-                zipcode_area = zip_gdf.area[0]
-                weight = intersected_area / zipcode_area
-                zip = zip_gdf["GEOID20"][0]
-                mapping.setdefault(zip, []).append((air_quality, weight))
+                intersected_area = list(gdf_joined.area)[0]
+                block_area = list(block_gdf.area)[0]
+                weight = intersected_area / block_area
+                block = list(block_gdf["BLOCK"])[0]
+                mapping.setdefault(block, []).append((air_quality, weight))
     return mapping
 
 
