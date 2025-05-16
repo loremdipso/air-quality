@@ -35,3 +35,5 @@ Or, if you aren't using uv, you can just do:
 ## Caching
 
 The biggest optimization here is caching the census blocks for just Washington. That way we don't have to load all the blocks (~13G) into memory, just relevant ~400MB or so.
+
+Still, the slow version takes ~5 minutes to run on my machine. Which isn't terrible, but we could probably do better.
