@@ -22,8 +22,8 @@ def main():
 
 def load_census_blocks():
     print("Loading census blocks...")
+    # Try to load from cache. If not found we'll build the cache next.
     try:
-        # Try to load from cache
         gdf = geopandas.read_file("./washington.gpkg")
         print("Loaded from cache...")
         return gdf
@@ -58,7 +58,6 @@ def load_census_blocks():
 
     # Cache
     print("Writing to cache...")
-    # gdf.to_file("washington.shp")
     gdf.to_file("washington.gpkg", driver="GPKG")
     return gdf
 
